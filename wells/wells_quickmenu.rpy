@@ -23,7 +23,7 @@ screen quick_menu1():
                 xysize (100, 40)
                 idle "wells/gui/imgbutton/gatilho_idle.png"
                 hover "wells/gui/imgbutton/gatilho-hover.png"
-                action Show("quick_menu2")
+                action [Show("quick_menu2"), Hide("quick_menu1")]
                 alt "Abrir Atalhos"
 
             imagebutton:
