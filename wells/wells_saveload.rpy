@@ -5,7 +5,7 @@
 screen wells_custom_save():
     modal True
     zorder 199 
-    tag wells_saveload_screen
+    tag menu
     add Solid("#000000aa")
 
     $ current_page_num = int(persistent._file_page) if isinstance(persistent._file_page, (int, float)) or (isinstance(persistent._file_page, basestring if renpy.version_tuple < (8, 0, 0) else str) and persistent._file_page.isdigit()) else 1
@@ -148,7 +148,7 @@ screen wells_custom_save():
 screen wells_custom_load():
     modal True
     zorder 199 
-    tag wells_saveload_screen
+    tag menu
     add Solid("#000000aa")
 
     $ current_page_num = int(persistent._file_page) if isinstance(persistent._file_page, (int, float)) or (isinstance(persistent._file_page, basestring if renpy.version_tuple < (8, 0, 0) else str) and persistent._file_page.isdigit()) else 1
