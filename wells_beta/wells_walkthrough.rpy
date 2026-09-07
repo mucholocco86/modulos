@@ -1,6 +1,6 @@
 ################################################################################
 ## WELLS FRAMEWORK — WALKTHROUGH
-## ANALISADOR DE CONSEQUÊNCIAS — V4
+## ANALISADOR DE CONSEQUÊNCIAS — V5
 ################################################################################
 
 default persistent.wells_walkthrough_enabled = False
@@ -199,36 +199,23 @@ init -1000 python:
 
     wells_walkthrough_analyzer = WellsWalkthroughAnalyzer()
 
-    # Ren'Py advances the context to the node after the Menu before calling
-    # renpy.exports.menu(). Capture the real Menu at that exact runtime point.
+    # Ren'Py advances the context to the node after the Menu before the menu
+    # screen is requested. Therefore we capture the actual Menu object at the
+    # very beginning of Menu.execute(), before Ren'Py changes the context.
     wells_walkthrough_runtime_menu = None
-    wells_walkthrough_runtime_choices = None
-    wells_walkthrough_original_menu = getattr(renpy.exports, "menu", None)
+    wells_walkthrough_original_menu_execute = getattr(renpy.ast.Menu, "execute", None)
 
-    if wells_walkthrough_original_menu is not None and not getattr(wells_walkthrough_original_menu, "_wells_walkthrough_wrapped", False):
-        def wells_walkthrough_menu_wrapper(items, set_expr=None, *args, **kwargs):
+    if wells_walkthrough_original_menu_execute is not None and not getattr(wells_walkthrough_original_menu_execute, "_wells_walkthrough_wrapped", False):
+        def wells_walkthrough_menu_execute_wrapper(self):
             global wells_walkthrough_runtime_menu
-            global wells_walkthrough_runtime_choices
             try:
-                current = renpy.game.context().current
-                menu_node = None
-                try:
-                    menu_node = renpy.game.script.lookup_or_none(current)
-                except:
-                    pass
-                if isinstance(menu_node, renpy.ast.Menu):
-                    wells_walkthrough_runtime_menu = menu_node
-                    wells_walkthrough_runtime_choices = list(items)
-                else:
-                    wells_walkthrough_runtime_menu = None
-                    wells_walkthrough_runtime_choices = None
+                wells_walkthrough_runtime_menu = self
             except:
                 wells_walkthrough_runtime_menu = None
-                wells_walkthrough_runtime_choices = None
-            return wells_walkthrough_original_menu(items, set_expr, *args, **kwargs)
+            return wells_walkthrough_original_menu_execute(self)
 
-        wells_walkthrough_menu_wrapper._wells_walkthrough_wrapped = True
-        renpy.exports.menu = wells_walkthrough_menu_wrapper
+        wells_walkthrough_menu_execute_wrapper._wells_walkthrough_wrapped = True
+        renpy.ast.Menu.execute = wells_walkthrough_menu_execute_wrapper
 
     def wells_walkthrough_current_menu(items):
         try:
