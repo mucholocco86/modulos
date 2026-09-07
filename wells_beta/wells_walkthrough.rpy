@@ -1,428 +1,574 @@
 ################################################################################
 ## WELLS FRAMEWORK — WALKTHROUGH
-## ANALISADOR DE CONSEQUÊNCIAS — V8
+## BETA — INTERCEPTAÇÃO NO PONTO DO MENU
 ##
-## Arquitetura:
-## - usa a mesma ideia estrutural do URW: interceptar renpy.exports.menu
-## - captura o Menu AST REAL no momento em que Menu.execute() está rodando
-## - usa o índice real da escolha para localizar o bloco AST
-## - mantém fallback por captions/contexto quando necessário
-## - injeta a informação no caption ANTES da screen Choice ser criada
-## - NÃO substitui a screen choice do Wells
-## - NÃO cria uma segunda tela de choices
-## - NÃO altera action/value das escolhas
+## Esta versão NÃO cria uma nova tela de choices.
+## Ela usa o menu normal do Ren'Py e injeta a informação diretamente
+## no caption que chega à tela "choice".
+##
+## Objetivo:
+##   renpy.exports.menu(...)
+##       -> localizar o Menu AST real
+##       -> analisar o bloco da opção
+##       -> acrescentar a consequência ao caption
+##       -> devolver os mesmos itens ao Ren'Py
+##
+## A apresentação continua sendo responsabilidade de wells_choices.rpy.
 ################################################################################
 
 default persistent.wells_walkthrough_enabled = False
 
-init -1100 python:
+init -1000 python:
     import ast as wells_py_ast
-    import re as wells_re
 
     class WellsWalkthroughConsequence(object):
         def __init__(self, kind, text):
             self.kind = kind
             self.text = text
 
+
     class WellsWalkthroughAnalyzer(object):
 
-        def _format_value(self, value):
-            if isinstance(value, bool):
-                return "True" if value else "False"
-            if value is None:
-                return "None"
+        MAX_RESULTS = 4
+
+        def _python_source(self, code_obj):
             try:
-                return str(value)
+                source = code_obj.source
+                if source:
+                    return source
             except:
-                return "?"
+                pass
+
+            try:
+                source = code_obj.py
+                if source:
+                    return source
+            except:
+                pass
+
+            try:
+                source = code_obj.sourcecode
+                if source:
+                    return source
+            except:
+                pass
+
+            return None
 
         def _target_name(self, target):
             try:
                 if isinstance(target, wells_py_ast.Name):
                     return target.id
+
                 if isinstance(target, wells_py_ast.Attribute):
-                    parts = []
-                    cur = target
-                    while isinstance(cur, wells_py_ast.Attribute):
-                        parts.insert(0, cur.attr)
-                        cur = cur.value
-                    if isinstance(cur, wells_py_ast.Name):
-                        parts.insert(0, cur.id)
-                    return ".".join(parts)
+                    base = self._target_name(target.value)
+                    if base:
+                        return base + "." + target.attr
+                    return target.attr
+
+                if isinstance(target, wells_py_ast.Subscript):
+                    base = self._target_name(target.value)
+                    if base:
+                        return base + "[...]"
             except:
                 pass
+
             return None
 
-        def _value_text(self, node):
+        def _constant_text(self, value):
             try:
-                if hasattr(wells_py_ast, "Constant") and isinstance(node, wells_py_ast.Constant):
-                    return self._format_value(node.value)
-                if isinstance(node, wells_py_ast.Name):
-                    return node.id
-                if isinstance(node, wells_py_ast.Attribute):
-                    return self._target_name(node)
-                if isinstance(node, wells_py_ast.UnaryOp):
-                    if isinstance(node.op, wells_py_ast.USub):
-                        return "-" + self._value_text(node.operand)
-                    if isinstance(node.op, wells_py_ast.UAdd):
-                        return "+" + self._value_text(node.operand)
-                if isinstance(node, wells_py_ast.BinOp):
-                    left = self._value_text(node.left)
-                    right = self._value_text(node.right)
-                    if isinstance(node.op, wells_py_ast.Add):
-                        return left + " + " + right
-                    if isinstance(node.op, wells_py_ast.Sub):
-                        return left + " - " + right
-                if isinstance(node, wells_py_ast.Call):
-                    return self._call_text(node)
+                if isinstance(value, wells_py_ast.Constant):
+                    return repr(value.value)
+
+                if isinstance(value, wells_py_ast.Str):
+                    return repr(value.s)
+
+                if isinstance(value, wells_py_ast.Num):
+                    return repr(value.n)
             except:
                 pass
-            return "valor"
 
-        def _call_text(self, node):
+            return None
+
+        def _condition_text(self, test):
             try:
-                if isinstance(node.func, wells_py_ast.Name):
-                    return str(node.func.id)
-                return str(self._target_name(node.func))
+                return wells_py_ast.unparse(test)
             except:
-                return "function"
+                pass
+
+            try:
+                return wells_py_ast.dump(test)
+            except:
+                pass
+
+            return "condição"
 
         def _append(self, result, kind, text):
+            if len(result) >= self.MAX_RESULTS:
+                return
+
+            if not text:
+                return
+
+            text = str(text).strip()
+
+            if not text:
+                return
+
+            for old in result:
+                if old.kind == kind and old.text == text:
+                    return
+
             result.append(WellsWalkthroughConsequence(kind, text))
 
-        def _python_source(self, code_obj):
-            try:
-                if isinstance(code_obj, str):
-                    return code_obj
-            except:
-                pass
-            for attr in ("source", "py"):
-                try:
-                    source = getattr(code_obj, attr)
-                    if isinstance(source, str):
-                        return source
-                    if source is not None:
-                        return str(source)
-                except:
-                    pass
-            return None
-
         def _analyze_python(self, source, result):
-            if not source:
-                return
             try:
                 tree = wells_py_ast.parse(source)
             except:
                 return
 
-            try:
-                nodes = wells_py_ast.walk(tree)
-            except:
-                return
+            for node in wells_py_ast.walk(tree):
 
-            for node in nodes:
+                if len(result) >= self.MAX_RESULTS:
+                    return
+
                 try:
                     if isinstance(node, wells_py_ast.AugAssign):
                         name = self._target_name(node.target)
+
                         if not name:
                             continue
-                        value = self._value_text(node.value)
+
                         if isinstance(node.op, wells_py_ast.Add):
-                            self._append(result, "increase", name + " += " + value)
+                            value = self._constant_text(node.value)
+                            if value:
+                                self._append(result, "increase",
+                                             "%s +%s" % (name, value))
+                            else:
+                                self._append(result, "increase",
+                                             "%s aumenta" % name)
+
                         elif isinstance(node.op, wells_py_ast.Sub):
-                            self._append(result, "decrease", name + " -= " + value)
+                            value = self._constant_text(node.value)
+                            if value:
+                                self._append(result, "decrease",
+                                             "%s -%s" % (name, value))
+                            else:
+                                self._append(result, "decrease",
+                                             "%s diminui" % name)
+
+                        else:
+                            self._append(result, "assign",
+                                         "%s é alterado" % name)
+
                     elif isinstance(node, wells_py_ast.Assign):
-                        value = self._value_text(node.value)
                         for target in node.targets:
                             name = self._target_name(target)
-                            if name:
-                                self._append(result, "assign", name + " = " + value)
-                    elif hasattr(wells_py_ast, "AnnAssign") and isinstance(node, wells_py_ast.AnnAssign):
-                        name = self._target_name(node.target)
-                        if name and node.value:
-                            self._append(result, "assign", name + " = " + self._value_text(node.value))
-                    elif isinstance(node, wells_py_ast.Call):
-                        self._append(result, "call", self._call_text(node))
+
+                            if not name:
+                                continue
+
+                            value = self._constant_text(node.value)
+
+                            if value is not None:
+                                self._append(result, "assign",
+                                             "%s = %s" % (name, value))
+                            else:
+                                self._append(result, "assign",
+                                             "%s é alterado" % name)
+
+                    elif isinstance(node, wells_py_ast.If):
+                        condition = self._condition_text(node.test)
+                        self._append(result, "condition",
+                                     "? %s" % condition)
+
                 except:
                     pass
 
-        def _analyze_node(self, node, result):
-            if node is None:
+        def _walk_renpy(self, node, result, seen):
+            if node is None or len(result) >= self.MAX_RESULTS:
                 return
+
+            try:
+                marker = id(node)
+                if marker in seen:
+                    return
+                seen.add(marker)
+            except:
+                pass
+
             try:
                 if isinstance(node, renpy.ast.PyCode):
-                    self._analyze_python(self._python_source(node), result)
-                    return
+                    source = self._python_source(node)
+                    if source:
+                        self._analyze_python(source, result)
+
+                elif isinstance(node, renpy.ast.Jump):
+                    target = getattr(node, "target", None)
+                    if target:
+                        self._append(result, "jump", "⇒ %s" % target)
+
+                elif isinstance(node, renpy.ast.Call):
+                    label = getattr(node, "label", None)
+
+                    if label:
+                        self._append(result, "call", "⇒ %s" % label)
+
+                elif isinstance(node, renpy.ast.If):
+                    entries = getattr(node, "entries", None)
+
+                    if entries:
+                        for condition, block in entries:
+                            if condition:
+                                self._append(result, "condition",
+                                             "? %s" % condition)
+
+                            if block:
+                                for child in block:
+                                    self._walk_renpy(child, result, seen)
+
+                                    if len(result) >= self.MAX_RESULTS:
+                                        return
             except:
                 pass
+
             try:
-                if isinstance(node, renpy.ast.Python):
-                    self._analyze_python(self._python_source(node.code), result)
-                    return
-            except:
-                pass
-            try:
-                if isinstance(node, renpy.ast.Jump):
-                    self._append(result, "jump", str(node.target))
-                    return
-            except:
-                pass
-            try:
-                if isinstance(node, renpy.ast.Call):
-                    self._append(result, "call", str(node.label))
-                    return
-            except:
-                pass
-            try:
-                if isinstance(node, renpy.ast.If):
-                    self._append(result, "condition", "condition")
-                    return
+                getter = getattr(node, "get_children", None)
+
+                if getter:
+                    children = getter(lambda child: True)
+
+                    if children:
+                        for child in children:
+                            self._walk_renpy(child, result, seen)
+
+                            if len(result) >= self.MAX_RESULTS:
+                                return
             except:
                 pass
 
         def analyze(self, block):
             result = []
+
+            if not block:
+                return result
+
+            seen = set()
+
             try:
-                nodes = block if isinstance(block, (list, tuple)) else [block]
-                for node in nodes:
-                    try:
-                        collected = []
-                        node.get_children(collected.append)
-                        for child in collected:
-                            self._analyze_node(child, result)
-                    except:
-                        self._analyze_node(node, result)
+                for node in block:
+                    self._walk_renpy(node, result, seen)
+
+                    if len(result) >= self.MAX_RESULTS:
+                        break
             except:
                 pass
 
-            clean = []
-            seen = set()
-            for item in result:
-                key = (item.kind, item.text)
-                if key not in seen:
-                    seen.add(key)
-                    clean.append(item)
-            return clean
+            return result
 
-    wells_walkthrough_analyzer = WellsWalkthroughAnalyzer()
 
-    ########################################################################
-    ## RUNTIME MENU CAPTURE
-    ########################################################################
+    class WellsWalkthroughMenuFinder(object):
 
-    wells_walkthrough_original_menu = getattr(renpy.exports, "menu", None)
-    wells_walkthrough_original_menu_execute = getattr(renpy.ast.Menu, "execute", None)
-    wells_walkthrough_active_menu = None
-    wells_walkthrough_runtime_menu = None
-    wells_walkthrough_runtime_injected = False
+        def __init__(self):
+            self._last_menu_node = None
+            self._last_captions = None
+            self._menu_history = []
 
-    def wells_walkthrough_menu_execute(self):
-        global wells_walkthrough_active_menu
-        previous = wells_walkthrough_active_menu
-        wells_walkthrough_active_menu = self
-        try:
-            return wells_walkthrough_original_menu_execute(self)
-        finally:
-            wells_walkthrough_active_menu = previous
+        def _runtime_caption(self, item):
+            try:
+                if hasattr(item, "caption"):
+                    return str(item.caption)
+            except:
+                pass
 
-    try:
-        if wells_walkthrough_original_menu_execute is not None:
-            renpy.ast.Menu.execute = wells_walkthrough_menu_execute
-    except:
-        pass
+            try:
+                if isinstance(item, (tuple, list)):
+                    return str(item[0])
+            except:
+                pass
 
-    ########################################################################
-    ## FALLBACK MENU FINDER
-    ########################################################################
+            return ""
 
-    def wells_walkthrough_clean_caption(value):
-        try:
-            text = str(value)
-        except:
-            text = ""
-        try:
-            text = wells_re.sub(r"\{[^}]*\}", "", text)
-        except:
-            pass
-        return text.strip()
+        def _captions(self, items):
+            result = []
 
-    def wells_walkthrough_item_caption(item):
-        try:
-            if hasattr(item, "caption"):
-                return wells_walkthrough_clean_caption(item.caption)
-            if isinstance(item, (list, tuple)) and len(item) > 0:
-                return wells_walkthrough_clean_caption(item[0])
-        except:
-            pass
-        return ""
+            try:
+                for item in items:
+                    result.append(self._runtime_caption(item))
+            except:
+                pass
 
-    def wells_walkthrough_execution_context():
-        context = {"filename": None, "linenumber": 0}
-        try:
-            ctx = renpy.game.context()
-            script = renpy.game.script
-            current = getattr(ctx, "current", None)
-            if current:
-                try:
-                    node = script.lookup(current)
-                    if node is not None:
-                        context["filename"] = getattr(node, "filename", None)
-                        context["linenumber"] = getattr(node, "linenumber", 0) or 0
-                except:
-                    pass
-        except:
-            pass
-        return context
+            return result
 
-    def wells_walkthrough_find_menu_node(items):
-        if wells_walkthrough_active_menu is not None:
-            return wells_walkthrough_active_menu
+        def _menu_captions(self, node):
+            result = []
 
-        best = None
-        best_score = -1
-        context = wells_walkthrough_execution_context()
+            try:
+                for item in node.items:
+                    result.append(str(item[0]))
+            except:
+                pass
 
-        try:
-            for node_name, node in renpy.game.script.namemap.items():
-                if not isinstance(node, renpy.ast.Menu):
-                    continue
+            return result
 
-                ast_items = getattr(node, "items", None)
-                if not ast_items:
-                    continue
+        def _similarity(self, runtime, menu):
+            if not runtime or not menu:
+                return 0.0
 
-                runtime_captions = [wells_walkthrough_item_caption(x) for x in items]
-                ast_captions = [wells_walkthrough_clean_caption(x[0]) for x in ast_items]
+            matched = 0
 
-                matches = 0
-                for caption in runtime_captions:
-                    if caption in ast_captions:
-                        matches += 1
+            for caption in runtime:
+                for menu_caption in menu:
+                    if str(caption).strip() == str(menu_caption).strip():
+                        matched += 1
+                        break
 
-                if not runtime_captions:
-                    continue
+            return float(matched) / float(max(len(runtime), len(menu), 1))
 
-                ratio = float(matches) / float(len(runtime_captions))
-                if ratio < 0.8:
-                    continue
+        def _collect_menu_nodes(self):
+            nodes = []
 
-                score = int(ratio * 1000)
-                menu_file = str(getattr(node, "filename", "") or "").replace(".rpyc", ".rpy")
-                context_file = str(context.get("filename") or "")
-                if menu_file and context_file and menu_file == context_file:
-                    score += 500
+            try:
+                namemap = renpy.game.script.namemap
 
-                if score > best_score:
-                    best_score = score
-                    best = node
-        except:
-            pass
+                for node in namemap.values():
+                    try:
+                        if isinstance(node, renpy.ast.Menu):
+                            nodes.append(node)
+                    except:
+                        pass
+            except:
+                pass
 
-        return best
+            return nodes
 
-    def wells_walkthrough_block_for_item(menu_node, runtime_item):
-        if menu_node is None:
+        def _find_from_last(self, captions):
+            node = self._last_menu_node
+
+            if node is None:
+                return None
+
+            try:
+                score = self._similarity(captions, self._menu_captions(node))
+
+                if score >= 0.80:
+                    return node
+            except:
+                pass
+
             return None
 
-        try:
-            # Ren'Py 7.4.11 Menu.execute() sends:
-            # (label, condition, real_menu_item_index)
-            if isinstance(runtime_item, (list, tuple)) and len(runtime_item) >= 3:
-                index = runtime_item[2]
-                if isinstance(index, int) and 0 <= index < len(menu_node.items):
-                    return menu_node.items[index][2]
-        except:
-            pass
+        def find_menu_node(self, items):
+            captions = self._captions(items)
 
-        # Fallback for engines/mods that don't expose the index.
-        caption = wells_walkthrough_item_caption(runtime_item)
-        try:
-            for menu_item in menu_node.items:
-                if wells_walkthrough_clean_caption(menu_item[0]) == caption:
-                    return menu_item[2]
-        except:
-            pass
+            if not captions:
+                return None, None
 
-        return None
+            node = self._find_from_last(captions)
 
-    def wells_walkthrough_format_consequences(consequences):
-        lines = []
-        for consequence in consequences:
-            if consequence.kind == "increase":
-                lines.append("{color=#39ff14}" + consequence.text + "{/color}")
-            elif consequence.kind == "decrease":
-                lines.append("{color=#ff4040}" + consequence.text + "{/color}")
-            elif consequence.kind == "assign":
-                lines.append("{color=#00f3ff}" + consequence.text + "{/color}")
-            elif consequence.kind == "jump":
-                lines.append("{color=#ff9d00}⇒ " + consequence.text + "{/color}")
-            elif consequence.kind == "call":
-                lines.append("{color=#39ff14}⇒ " + consequence.text + "{/color}")
-            elif consequence.kind == "condition":
-                lines.append("{color=#ffe600}? condition{/color}")
-        return "\n".join(lines)
+            if node is not None:
+                self._last_captions = captions
+                return node, "last"
 
-    def wells_walkthrough_menu_wrapper(items, set_expr, args=None, kwargs=None, item_arguments=None):
-        global wells_walkthrough_runtime_menu
-        global wells_walkthrough_runtime_injected
+            best_node = None
+            best_score = 0.0
+            best_index = -1
 
-        wells_walkthrough_runtime_menu = None
-        wells_walkthrough_runtime_injected = False
-
-        try:
-            runtime_items = list(items) if items is not None else []
-        except:
-            runtime_items = items
-
-        if persistent.wells_walkthrough_enabled:
             try:
-                menu_node = wells_walkthrough_find_menu_node(runtime_items)
-                wells_walkthrough_runtime_menu = menu_node
+                all_nodes = self._collect_menu_nodes()
 
-                if menu_node is not None:
-                    enhanced_items = []
-                    injected_any = False
+                for index, candidate in enumerate(all_nodes):
+                    candidate_captions = self._menu_captions(candidate)
+                    score = self._similarity(captions, candidate_captions)
 
-                    for runtime_item in runtime_items:
-                        try:
-                            if not isinstance(runtime_item, (list, tuple)) or len(runtime_item) < 3:
-                                enhanced_items.append(runtime_item)
-                                continue
+                    if score > best_score:
+                        best_score = score
+                        best_node = candidate
+                        best_index = index
 
-                            caption = runtime_item[0]
-                            condition = runtime_item[1]
-                            value = runtime_item[2]
-                            block = wells_walkthrough_block_for_item(menu_node, runtime_item)
-                            consequences = wells_walkthrough_analyzer.analyze(block)
-                            info = wells_walkthrough_format_consequences(consequences)
+                    if score >= 0.999:
+                        break
 
-                            if info and value is not None:
-                                caption = str(caption) + "\n" + info
-                                injected_any = True
+                if best_node is not None and best_score >= 0.80:
+                    self._last_menu_node = best_node
+                    self._last_captions = captions
 
-                            enhanced_items.append((caption, condition, value))
-                        except:
-                            enhanced_items.append(runtime_item)
+                    self._menu_history.append(best_index)
 
-                    runtime_items = enhanced_items
-                    wells_walkthrough_runtime_injected = injected_any
+                    if len(self._menu_history) > 20:
+                        self._menu_history.pop(0)
+
+                    return best_node, "caption"
+
             except:
-                wells_walkthrough_runtime_menu = None
-                wells_walkthrough_runtime_injected = False
+                pass
 
-        return wells_walkthrough_original_menu(runtime_items, set_expr, args, kwargs, item_arguments)
+            return None, None
 
-    if wells_walkthrough_original_menu is not None and not getattr(wells_walkthrough_original_menu, "_wells_walkthrough_wrapped", False):
-        wells_walkthrough_menu_wrapper._wells_walkthrough_wrapped = True
-        renpy.exports.menu = wells_walkthrough_menu_wrapper
+
+    wells_walkthrough_analyzer = WellsWalkthroughAnalyzer()
+    wells_walkthrough_menu_finder = WellsWalkthroughMenuFinder()
+
+
+    def wells_walkthrough_format(consequences):
+        if not consequences:
+            return ""
+
+        parts = []
+
+        for consequence in consequences:
+            try:
+                if consequence.kind == "increase":
+                    color = "#39ff14"
+                elif consequence.kind == "decrease":
+                    color = "#ff4040"
+                elif consequence.kind == "condition":
+                    color = "#ffff66"
+                elif consequence.kind == "jump":
+                    color = "#ffb347"
+                elif consequence.kind == "call":
+                    color = "#66ff99"
+                else:
+                    color = "#66ffff"
+
+                parts.append("{color=%s}%s{/color}" %
+                             (color, consequence.text))
+            except:
+                pass
+
+        return "  ".join(parts)
+
 
     def wells_walkthrough_get_info(items, item):
-        # A tela Wells não precisa mais chamar o analisador.
-        # O caption já chega pronto pela camada de runtime.
+        """
+        Compatibilidade com wells_choices.rpy.
+
+        A versão atual injeta a informação no caption antes da tela choice.
+        Portanto esta função não deve inserir uma segunda cópia.
+        """
         return ""
 
+
     def wells_walkthrough_text_size(base_size):
-        size = int(base_size)
-        if size < 12:
-            size = 12
-        return size
+        try:
+            size = int(base_size)
+
+            if size < 12:
+                size = 12
+
+            return size
+        except:
+            return 18
+
+
+    def wells_walkthrough_enhance_items(items):
+        if not persistent.wells_walkthrough_enabled:
+            return items
+
+        try:
+            menu_node, match_method = wells_walkthrough_menu_finder.find_menu_node(items)
+
+            if menu_node is None:
+                return items
+
+            enhanced = []
+
+            for index, item in enumerate(items):
+                try:
+                    caption = wells_walkthrough_menu_finder._runtime_caption(item)
+                    block = None
+
+                    # Ren'Py 7.4.x / 8.x: exports.menu receives
+                    # (caption, condition, value) before calling store.menu.
+                    if isinstance(item, (tuple, list)) and len(item) >= 3:
+                        value = item[2]
+
+                        if isinstance(value, int):
+                            try:
+                                block = menu_node.items[value][2]
+                            except:
+                                block = None
+
+                    # Fallback: resolve the block by caption.
+                    if block is None:
+                        try:
+                            for menu_item in menu_node.items:
+                                if str(menu_item[0]).strip() == str(caption).strip():
+                                    block = menu_item[2]
+                                    break
+                        except:
+                            pass
+
+                    consequences = wells_walkthrough_analyzer.analyze(block)
+
+                    if consequences:
+                        formatted = wells_walkthrough_format(consequences)
+
+                        if formatted:
+                            new_caption = str(caption) + "\n" + formatted
+
+                            if isinstance(item, tuple):
+                                if len(item) >= 3:
+                                    item = (new_caption,) + tuple(item[1:])
+                                else:
+                                    item = (new_caption,) + tuple(item[1:])
+                            elif isinstance(item, list):
+                                item = [new_caption] + list(item[1:])
+                            else:
+                                try:
+                                    item.caption = new_caption
+                                except:
+                                    pass
+
+                    enhanced.append(item)
+
+                except:
+                    enhanced.append(item)
+
+            return enhanced
+
+        except:
+            return items
+
+
+    def wells_walkthrough_install():
+        try:
+            original_menu = renpy.exports.menu
+
+            if getattr(original_menu, "_wells_walkthrough_wrapper", False):
+                return
+
+            def wells_walkthrough_wrapped_menu(items,
+                                               set_expr=None,
+                                               args=None,
+                                               kwargs=None,
+                                               item_arguments=None):
+
+                try:
+                    items = list(items)
+                except:
+                    pass
+
+                try:
+                    enhanced_items = wells_walkthrough_enhance_items(items)
+                except:
+                    enhanced_items = items
+
+                return original_menu(
+                    enhanced_items,
+                    set_expr,
+                    args,
+                    kwargs,
+                    item_arguments
+                )
+
+            wells_walkthrough_wrapped_menu._wells_walkthrough_wrapper = True
+            wells_walkthrough_wrapped_menu._wells_original_menu = original_menu
+
+            renpy.exports.menu = wells_walkthrough_wrapped_menu
+
+        except:
+            pass
+
+
+    wells_walkthrough_install()
