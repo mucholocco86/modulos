@@ -1,6 +1,6 @@
 ################################################################################
 ## WELLS FRAMEWORK — WALKTHROUGH
-## ANALISADOR DE CONSEQUÊNCIAS — V2
+## ANALISADOR DE CONSEQUÊNCIAS — V3
 ################################################################################
 
 default persistent.wells_walkthrough_enabled = False
@@ -228,14 +228,18 @@ init -900 python:
 
     def wells_walkthrough_current_menu(items):
         """
-        Finds the current Ren'Py Menu without relying on history/cache.
+        Finds the Menu that is currently feeding the choice screen.
 
-        Runtime choice lists can contain fewer entries than the compiled
-        Menu when menu conditions are present, so the old exact-list match
-        could fail even when the correct Menu was available.
+        V3 first uses Ren'Py's current statement directly. It then falls
+        back to caption matching for compatibility with unusual/custom menu
+        implementations.
         """
         try:
             current = renpy.game.context().current
+
+            if isinstance(current, renpy.ast.Menu):
+                return current
+
             node = renpy.game.script.namemap.get(current)
             if isinstance(node, renpy.ast.Menu):
                 return node
@@ -270,9 +274,6 @@ init -900 python:
                 if not node_captions:
                     continue
 
-                # Match the runtime captions as an ordered subsequence of
-                # the compiled menu captions. This tolerates conditional
-                # menu entries that are not currently displayed.
                 position = 0
                 matched = 0
                 for caption in captions:
@@ -303,33 +304,51 @@ init -900 python:
             if menu is None:
                 return ""
 
-            caption = item.caption if hasattr(item, "caption") else item[0]
+            # Ren'Py builds each screen choice from the Menu item index.
+            # ChoiceReturn.value is the original index, so this is much more
+            # reliable than trying to rediscover the block by caption.
+            action = getattr(item, "action", None)
+            menu_index = getattr(action, "value", None)
 
-            for menu_item in menu.items:
-                if str(menu_item[0]) == str(caption):
-                    block = menu_item[2]
-                    consequences = wells_walkthrough_analyzer.analyze(block)
+            block = None
 
-                    if not consequences:
-                        return ""
+            if isinstance(menu_index, int):
+                if menu_index >= 0 and menu_index < len(menu.items):
+                    block = menu.items[menu_index][2]
 
-                    lines = []
+            # Compatibility fallback for custom Choice objects.
+            if block is None:
+                caption = item.caption if hasattr(item, "caption") else item[0]
+                for menu_item in menu.items:
+                    if str(menu_item[0]) == str(caption):
+                        block = menu_item[2]
+                        break
 
-                    for consequence in consequences:
-                        if consequence.kind == "increase":
-                            lines.append("{color=#39ff14}" + consequence.text + "{/color}")
-                        elif consequence.kind == "decrease":
-                            lines.append("{color=#ff4040}" + consequence.text + "{/color}")
-                        elif consequence.kind == "assign":
-                            lines.append("{color=#00f3ff}" + consequence.text + "{/color}")
-                        elif consequence.kind == "jump":
-                            lines.append("{color=#ff9d00}⇒ " + consequence.text + "{/color}")
-                        elif consequence.kind == "call":
-                            lines.append("{color=#39ff14}⇒ " + consequence.text + "{/color}")
-                        elif consequence.kind == "condition":
-                            lines.append("{color=#ffe600}? condition{/color}")
+            if block is None:
+                return ""
 
-                    return "\n".join(lines)
+            consequences = wells_walkthrough_analyzer.analyze(block)
+
+            if not consequences:
+                return ""
+
+            lines = []
+
+            for consequence in consequences:
+                if consequence.kind == "increase":
+                    lines.append("{color=#39ff14}" + consequence.text + "{/color}")
+                elif consequence.kind == "decrease":
+                    lines.append("{color=#ff4040}" + consequence.text + "{/color}")
+                elif consequence.kind == "assign":
+                    lines.append("{color=#00f3ff}" + consequence.text + "{/color}")
+                elif consequence.kind == "jump":
+                    lines.append("{color=#ff9d00}⇒ " + consequence.text + "{/color}")
+                elif consequence.kind == "call":
+                    lines.append("{color=#39ff14}⇒ " + consequence.text + "{/color}")
+                elif consequence.kind == "condition":
+                    lines.append("{color=#ffe600}? condition{/color}")
+
+            return "\n".join(lines)
 
         except:
             return ""
