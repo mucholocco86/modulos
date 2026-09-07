@@ -1,11 +1,18 @@
 ################################################################################
 ## WELLS FRAMEWORK — SISTEMA UNIVERSAL DE ESCOLHAS
-## TESTE DE CONEXÃO COM WELLS WALKTHROUGH
+##
+## Beta alinhado com a estrutura estável.
+## O Walkthrough atua antes desta tela e injeta o resultado no caption.
 ################################################################################
 
 init 999 screen choice(items):
     style_prefix "choice"
 
+    # ========================================================================
+    # SLOT 0 — PASS-THROUGH / COMPATIBILIDADE
+    # Mantém a estrutura visual do jogo hospedeiro, mas aplica os controles
+    # universais do Wells para posição, tamanho, espaçamento e largura.
+    # ========================================================================
     if persistent.wells_choice_slot == 0:
 
         vbox:
@@ -15,6 +22,8 @@ init 999 screen choice(items):
 
             for i in items:
 
+                # Compatibilidade com Choice objects do Ren'Py e com entradas
+                # em formato de tupla usadas por alguns jogos/mods.
                 python:
                     if hasattr(i, "caption"):
                         caption = i.caption
@@ -22,8 +31,6 @@ init 999 screen choice(items):
                     else:
                         caption = i[0]
                         action = i[1]
-
-                    wells_walkthrough_info = wells_walkthrough_get_info(items, i)
 
                 if action:
                     button:
@@ -33,26 +40,20 @@ init 999 screen choice(items):
                         xminimum (persistent.wells_choice_width if persistent.wells_choice_width is not None else 920)
                         xmaximum (persistent.wells_choice_width if persistent.wells_choice_width is not None else 920)
 
-                        vbox:
+                        text caption:
+                            style "wells_choice_text"
+                            size (persistent.wells_choice_size if persistent.wells_choice_size is not None else gui.choice_button_text_size)
                             xalign 0.5
-                            spacing 4
-
-                            text caption:
-                                style "wells_choice_text"
-                                size (persistent.wells_choice_size if persistent.wells_choice_size is not None else gui.choice_button_text_size)
-                                xalign 0.5
-                                text_align 0.5
-
-                            if wells_walkthrough_info:
-                                text wells_walkthrough_info:
-                                    size wells_walkthrough_text_size(18)
-                                    xalign 0.5
-                                    text_align 0.5
-                                    color "#39ff14"
+                            text_align 0.5
 
                 else:
                     text caption style "wells_choice_text"
 
+    # ========================================================================
+    # SLOT 1 — PERSONALIZAÇÃO MANUAL
+    # Usa o estilo choice_vbox do jogo/framework, mantendo os mesmos controles
+    # universais de posição, tamanho, espaçamento e largura.
+    # ========================================================================
     else:
 
         vbox:
@@ -63,6 +64,7 @@ init 999 screen choice(items):
 
             for i in items:
 
+                # Mesmo tratamento de compatibilidade do Slot 0.
                 python:
                     if hasattr(i, "caption"):
                         caption = i.caption
@@ -71,8 +73,6 @@ init 999 screen choice(items):
                         caption = i[0]
                         action = i[1]
 
-                    wells_walkthrough_info = wells_walkthrough_get_info(items, i)
-
                 textbutton caption:
                     action action
                     text_size (persistent.wells_choice_size if persistent.wells_choice_size is not None else gui.choice_button_text_size)
@@ -80,10 +80,3 @@ init 999 screen choice(items):
                     text_align 0.5
                     xminimum (persistent.wells_choice_width if persistent.wells_choice_width is not None else 920)
                     xmaximum (persistent.wells_choice_width if persistent.wells_choice_width is not None else 920)
-
-                if wells_walkthrough_info:
-                    text wells_walkthrough_info:
-                        size wells_walkthrough_text_size(18)
-                        xalign 0.5
-                        text_align 0.5
-                        color "#39ff14"
