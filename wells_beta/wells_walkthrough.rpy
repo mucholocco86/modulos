@@ -1,6 +1,6 @@
 ################################################################################
 ## WELLS FRAMEWORK — WALKTHROUGH
-## ANALISADOR DE CONSEQUÊNCIAS — V1
+## ANALISADOR DE CONSEQUÊNCIAS — V2
 ################################################################################
 
 default persistent.wells_walkthrough_enabled = False
@@ -80,13 +80,27 @@ init -900 python:
 
         def _python_source(self, code_obj):
             try:
-                return code_obj.source
+                if isinstance(code_obj, str):
+                    return code_obj
             except:
                 pass
+
             try:
-                return code_obj.py
+                source = code_obj.source
+                if isinstance(source, str):
+                    return source
+                return str(source)
             except:
                 pass
+
+            try:
+                source = code_obj.py
+                if isinstance(source, str):
+                    return source
+                return str(source)
+            except:
+                pass
+
             return None
 
         def _analyze_python(self, source, result):
@@ -125,8 +139,6 @@ init -900 python:
                         self._append(result, "assign", name + " = " + self._value_text(node.value))
 
                 elif isinstance(node, wells_py_ast.Call):
-                    # Avoid duplicating calls that are part of an assignment
-                    # only when they are direct descendants of that assignment.
                     self._append(result, "call", self._call_text(node))
 
         def _analyze_node(self, node, result):
@@ -135,6 +147,14 @@ init -900 python:
 
             try:
                 if isinstance(node, renpy.ast.PyCode):
+                    source = self._python_source(node)
+                    self._analyze_python(source, result)
+                    return
+            except:
+                pass
+
+            try:
+                if isinstance(node, renpy.ast.Python):
                     source = self._python_source(node.code)
                     self._analyze_python(source, result)
                     return
@@ -166,6 +186,15 @@ init -900 python:
                 pass
 
             # Generic Ren'Py AST traversal for nested blocks.
+            try:
+                children = node.get_children()
+                if children:
+                    for child in children:
+                        self._analyze_node(child, result)
+                    return
+            except:
+                pass
+
             try:
                 for child in node.children:
                     self._analyze_node(child, result)
@@ -200,6 +229,10 @@ init -900 python:
     def wells_walkthrough_current_menu(items):
         """
         Finds the current Ren'Py Menu without relying on history/cache.
+
+        Runtime choice lists can contain fewer entries than the compiled
+        Menu when menu conditions are present, so the old exact-list match
+        could fail even when the correct Menu was available.
         """
         try:
             current = renpy.game.context().current
@@ -209,7 +242,6 @@ init -900 python:
         except:
             pass
 
-        # Fallback: match the runtime captions against compiled Menu nodes.
         try:
             captions = []
             for item in items:
@@ -218,13 +250,45 @@ init -900 python:
                 else:
                     captions.append(str(item[0]))
 
+            if not captions:
+                return None
+
+            best_node = None
+            best_score = -1
+
             for node in renpy.game.script.namemap.values():
-                if isinstance(node, renpy.ast.Menu):
-                    node_captions = []
-                    for item in node.items:
-                        node_captions.append(str(item[0]))
-                    if node_captions == captions:
-                        return node
+                if not isinstance(node, renpy.ast.Menu):
+                    continue
+
+                node_captions = []
+                for menu_item in node.items:
+                    try:
+                        node_captions.append(str(menu_item[0]))
+                    except:
+                        pass
+
+                if not node_captions:
+                    continue
+
+                # Match the runtime captions as an ordered subsequence of
+                # the compiled menu captions. This tolerates conditional
+                # menu entries that are not currently displayed.
+                position = 0
+                matched = 0
+                for caption in captions:
+                    try:
+                        position = node_captions.index(caption, position)
+                    except ValueError:
+                        break
+                    matched += 1
+                    position += 1
+
+                if matched == len(captions) and matched > best_score:
+                    best_node = node
+                    best_score = matched
+
+            if best_node is not None:
+                return best_node
         except:
             pass
 
