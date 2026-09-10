@@ -16,9 +16,25 @@ Especialmente protegidos e fora do escopo de escrita:
 
 Mapear o URM inteiro antes de decidir o que será transplantado para o Wells. A fase atual não é de poda: componentes aparentemente secundários, antigos ou indiretos permanecem classificados até que suas relações sejam entendidas.
 
-## Fonte principal
+## Fontes de engenharia
 
-O trabalho parte do arquivo `MOD_ANALISE.zip`, contendo `1_URM_ORIGINAL/` e `2_URM_X52_CONVERTIDO/`. Os `.rpy` convertidos são artefatos de análise produzidos durante o trabalho; não devem ser confundidos com o código-fonte distribuído originalmente.
+O trabalho parte de três fontes principais e explicitamente separadas:
+
+1. `MOD_ANALISE.zip` — material do URM; os `.rpy` convertidos são artefatos de análise produzidos durante o trabalho e não devem ser confundidos com o código-fonte distribuído originalmente.
+2. Repositório GitHub do projeto — para preservar e documentar o trabalho de engenharia reversa.
+3. `renpy-7.4.11-sdk/` — referência do comportamento do motor Ren'Py 7.4.11.
+
+O SDK é usado como **terreno mecânico e contrato de comportamento**, não como alvo de reconstrução. O objetivo não é construir o motor Ren'Py, mas entender somente as interfaces e mecanismos que o URM utiliza.
+
+## Separação fundamental
+
+A documentação agora distingue três camadas:
+
+- **URM** — o que o autor do mod realmente implementou.
+- **Ren'Py** — o que o motor fornece e que o URM utiliza.
+- **Wells** — o que futuramente será reaproveitado ou adaptado.
+
+Essa separação evita tratar uma descoberta do SDK como se fosse código do URM.
 
 ## Estado consolidado
 
@@ -28,21 +44,24 @@ O trabalho parte do arquivo `MOD_ANALISE.zip`, contendo `1_URM_ORIGINAL/` e `2_U
 - VarsStore/StoreMonitor: mecanismos de estado e observação identificados.
 - TextBox/TextRepl: camada de apresentação/interceptação identificada.
 - PathDetection/CodeView: relações com fluxo e AST identificadas.
-- Próxima validação crítica: cruzar o comportamento observado no URM com o SDK completo do Ren'Py 7.4.11, especialmente Menu/ChoiceReturn, rollback, checkpoints, Store.get_changes e python_callbacks.
+- Manual interno do URM: iniciado em `10_URM_INTERNAL_MANUAL/`.
+- Próxima validação crítica: continuar cruzando o comportamento observado no URM com o SDK 7.4.11 somente nos pontos em que essa dependência explica uma função real do URM.
 
 ## Princípio de evidência
 
-- **CONFIRMADO** — diretamente observado no código, artefato ou execução/evidência.
-- **INFERÊNCIA** — explicação arquitetural derivada de fatos confirmados.
-- **HIPÓTESE** — ainda precisa de prova.
-- **ABERTO** — pergunta ainda não resolvida.
+- **CONFIRMADO — URM** — diretamente observado no código/material do URM.
+- **CONFIRMADO — Ren'Py 7.4.11** — diretamente observado no SDK de referência.
+- **OBSERVAÇÃO SUA** — comportamento observado em execução pelo usuário.
+- **HIPÓTESE** — explicação ainda precisa de prova.
+- **DESCARTADO/INCORRETO** — interpretação demonstrada como errada.
 
 ## Estrutura
 
 `03_ARCHITECTURE/` — arquitetura e fluxo geral.
 `04_CHOICES/` — sistema completo de Choices.
 `05_LOADER/` — bootstrap, x52MF2 e carregamento de módulos.
-`06_RENPY_COMPATIBILITY/` — comparação planejada contra o SDK 7.4.11.
+`06_RENPY_COMPATIBILITY/` — mecanismos do Ren'Py relevantes para as dependências do URM.
 `07_EVIDENCE/` — evidências visuais e materiais de execução.
 `08_CROSS_REFERENCE/` — relações entre classes, arquivos e mecanismos.
-`09_WELLS_APPLICATION/` — somente critérios e preparação para futura aplicação; não contém alterações no Wells estável.
+`09_WELLS_APPLICATION/` — critérios e preparação para futura aplicação; não contém alterações no Wells estável.
+`10_URM_INTERNAL_MANUAL/` — manual técnico consolidado do funcionamento interno do próprio URM.
