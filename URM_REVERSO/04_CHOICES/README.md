@@ -2,13 +2,14 @@
 
 ## Estado da investigação
 
-A análise do sistema de Choices avançou de uma simples identificação de `ChoicesClass` para um modelo arquitetural mais completo: **AST/Choice estrutural**, **estado dinâmico**, **seleção real**, **checkpoint**, **rollback** e **estrutura interna dos blocos AST** são canais relacionados, mas não são a mesma coisa.
+A análise do sistema de Choices avançou de uma simples identificação de `ChoicesClass` para um modelo arquitetural mais completo: **AST/Choice estrutural**, **estado dinâmico**, **seleção real**, **checkpoint**, **rollback**, **Context** e **estrutura interna dos blocos AST** são canais relacionados, mas não são a mesma coisa.
 
 Documentos detalhados desta etapa:
 
 - `01_FLUXO_CHOICE_ROLLBACK.md` — fluxo da Choice desde a detecção no `renpy.ast.Menu`, passando pela seleção via `ChoiceReturn`, execução pelo Ren'Py, observação de alterações pelo `StoreMonitor` e retorno por rollback.
 - `02_LIMITES_E_CASOS_ESPECIAIS.md` — limites, Choices ocultas, texto substituído versus valor real, `jumpTo`, CodeView, fixed rollback, Skip e regras de preservação para o Wells.
-- `03_AST_MENU_BLOCOS_CALL_IF_JUMP.md` — nova etapa: estrutura real de `Menu.items`, blocos de Choice, `If.entries`, diferença entre `Call` e `Jump`, operações visuais separadas (`Show`, `Scene`, `With`) e limite estrutural de `URMChoice.jumpTo`.
+- `03_AST_MENU_BLOCOS_CALL_IF_JUMP.md` — estrutura real de `Menu.items`, blocos de Choice, `If.entries`, diferença entre `Call` e `Jump`, operações visuais separadas e limite estrutural de `URMChoice.jumpTo`.
+- `06_CONTEXT_ROLLBACK_EXECUTION_7_4_11.md` — relação entre `Context`, `RollbackLog`, restauração do contexto, `current`, `Context.run()`, `RestartContext`, fixed rollback e retomada da execução do AST no Ren'Py 7.4.11.
 
 ## Núcleo
 
@@ -38,261 +39,148 @@ Propriedades importantes:
 - `code` usa `CodeView.nodesToCode`;
 - `jumpTo` procura o primeiro `renpy.ast.Jump` direto no conteúdo da alternativa.
 
-## Estrutura AST confirmada no Ren'Py 7.4.11
+## Relação Context ↔ Rollback
 
-O SDK confirma que `Menu.items` guarda blocos AST reais para as alternativas.
+A análise do SDK 7.4.11 confirmou que o rollback restaura não apenas valores do store, mas também estado de controle associado ao `Context`.
+
+O fluxo consolidado é:
+
+```text
+RollbackLog
+    ↓
+seleciona entradas
+    ↓
+revlog
+    ↓
+rb.rollback()
+    ↓
+restauração do estado/contexto
+    ↓
+execute_default_statement(False)
+    ↓
+novo Rollback corrente
+    ↓
+Context.rollback_copy()
+    ↓
+RestartContext / RestartTopContext
+    ↓
+Context.run()
+    ↓
+AST continua do ponto restaurado
+```
+
+`Context` e `RollbackLog` têm responsabilidades diferentes:
+
+```text
+Context
+  → estado de controle da execução atual
+
+RollbackLog
+  → histórico de estados restauráveis
+```
+
+O `Context` contém, entre outros dados, `current`, `return_stack`, `dynamic_stack`, `scene_lists`, `rollback`, `info` e `force_checkpoint`.
+
+`RollbackLog.rollback()` usa os contextos associados aos registros restaurados e, ao final, cria um novo registro corrente baseado em `renpy.game.context().rollback_copy()`, seguido de uma reinicialização controlada da execução.
+
+## Fixed rollback
+
+No SDK 7.4.11, `fix_rollback()` estabelece uma `fixed_rollback_boundary`, mas não ativa diretamente `rollback_is_fixed`.
+
+Durante a restauração dos registros em `rollback()`, quando o `Context.current` restaurado alcança essa fronteira, `rollback_is_fixed` passa a `True`.
+
+Portanto:
+
+```text
+fix_rollback()
+    ↓
+define boundary
+    ↓
+rollback()
+    ↓
+restore entries
+    ↓
+reach boundary
+    ↓
+rollback_is_fixed = True
+```
+
+A semântica exata desse estado na seleção programática do URM continua sendo tratada junto com `ChoiceReturn` e o circuito de interação.
+
+## StoreMonitor e checkpoint
+
+O StoreMonitor permanece separado do dono do rollback.
+
+O fluxo confirmado é:
+
+```text
+StoreMonitor
+      ↓
+Context.force_checkpoint
+      ↓
+Context.run()
+      ↓
+RollbackLog.force_checkpoint
+      ↓
+RollbackLog.complete()
+      ↓
+checkpoint(hard=False)
+```
+
+Isso não significa que toda alteração arbitrária de variável gere automaticamente um checkpoint. O caminho confirmado é o callback Python do StoreMonitor solicitando `force_checkpoint`, seguido do processamento nativo do Ren'Py.
+
+## Choice e rollback
+
+O circuito nativo continua sendo:
 
 ```text
 Menu
-├── Choice A → (label, condition, block A)
-└── Choice B → (label, condition, block B)
-```
-
-`Menu.chain(next)` encadeia os blocos das Choices para a continuação do Menu. Depois que `renpy.exports.menu()` retorna a escolha, `Menu.execute()` faz `next_node()` do primeiro nó do bloco selecionado.
-
-Um bloco pode conter outros nós estruturados:
-
-```text
-Choice
- ├── Python
- ├── If
- │    ├── block A
- │    └── block B
- ├── Call
- └── Jump
-```
-
-O `If` também possui blocos próprios. `Call` utiliza a infraestrutura de chamada/retorno do contexto; `Jump` apenas transfere o próximo nó para o destino encontrado no script.
-
-Portanto `Jump` não é uma operação visual. `Show`, `Scene`, `Hide` e `With` são nós distintos responsáveis pelas respectivas operações visuais/transições.
-
-## `jumpTo` não é um grafo completo
-
-O URM procura o primeiro `renpy.ast.Jump` diretamente presente na lista de nós da Choice.
-
-Isso significa:
-
-```text
-Choice → Jump A
-```
-
-é detectado pelo `jumpTo`, mas:
-
-```text
-Choice → If → Jump A
-```
-
-não é encontrado por essa propriedade, embora o Jump exista na árvore AST e possa ser alcançado em runtime.
-
-A coluna `Next label` deve ser documentada como uma **heurística de Jump direto**, não como previsão completa do fluxo.
-
-Isso é particularmente importante porque `CodeView.nodesToCode()` possui profundidade diferente: ele consegue percorrer `If` recursivamente, enquanto `jumpTo` deliberadamente não faz essa travessia.
-
-## Jump e aparência de continuidade visual
-
-A análise do SDK refinou a observação de gameplay de que um `Jump` pode parecer produzir uma mudança visual contínua.
-
-O mecanismo real é:
-
-```text
-Jump cena_02
-  ↓
-lookup do label
-  ↓
-label cena_02
-  ↓
-Show / Scene / diálogo / outros nós
-  ↓
-novo estado visual
-```
-
-Assim, um Jump pode ser usado como ponte de controle para uma mudança visual imediata, mas a mudança pertence aos nós alcançados, não ao Jump.
-
-Classificação:
-
-- 🟡 **OBSERVAÇÃO SUA:** Jump pode aparecer associado a continuidade/mudança visual em gameplay.
-- 🟢 **CONFIRMADO — Ren'Py 7.4.11:** Jump transfere controle para o nó do destino.
-- 🟢 **CONFIRMADO — Ren'Py 7.4.11:** Show/Scene/Hide/With são operações AST separadas.
-- 🟠 **HIPÓTESE refinada:** a aparência de continuidade pode vir do primeiro nó ou sequência do label alvo.
-- 🔴 **NÃO CONFIRMADO:** Jump possui significado narrativo universal de continuidade, mudança de cena ou neutralidade.
-
-## Choices ocultas
-
-O URM mantém Choices cuja condição atual é falsa e apresenta sua visibilidade separadamente.
-
-Isso permite inspeção de alternativas que a interface normal do jogo pode não mostrar.
-
-A própria ação de seleção não faz uma segunda checagem de `isVisible`, o que é coerente com a funcionalidade histórica do URM de permitir selecionar Choices ocultas.
-
-Isso deve ser tratado como intervenção avançada, não como mera reprodução visual do Menu normal.
-
-## Código da Choice ≠ mudança de variável
-
-Esta distinção está formalmente registrada.
-
-O código mostrado na tela de Choices vem dos **nós AST pertencentes à alternativa**. Em particular, para `renpy.ast.Python`, `CodeView.nodesToCode()` utiliza `node.code.source`.
-
-Exemplo:
-
-```renpy
-"A":
-    RPjosy += 5
-```
-
-pode ser apresentado como código da alternativa. Isso não significa que `RPjosy` já tenha mudado.
-
-A mudança efetiva de estado pertence ao caminho separado:
-
-```text
-execução Ren'Py
-    ↓
-StoreMonitor
-    ↓
-oldVal / newVal
-```
-
-## CodeView e fidelidade
-
-O CodeView é uma reconstrução de apresentação da AST. Para nós Python, `node.code.source` fornece uma ligação forte com a fonte associada ao nó. Para outros nós, o URM reconstrói uma representação legível.
-
-O próprio URM avisa que o código mostrado é gerado por ele e provavelmente não é exatamente igual ao que o desenvolvedor escreveu.
-
-Portanto, para o Wells, é necessário distinguir:
-
-```text
-fonte associada ao nó Python
-≠
-reconstrução CodeView
-≠
-arquivo .rpy original
-```
-
-## Texto exibido versus valor usado na seleção
-
-`URMChoice.text` usa `renpy.exports.substitute()` para apresentação.
-
-`URMChoice.Action`, porém, passa `self._m1_choices__choice[0]` para `ChoiceReturn`, e não `self.text`.
-
-Assim existe uma separação importante:
-
-```text
-item original
- ├──→ substitute → texto apresentado
- └──→ ChoiceReturn → seleção real
-```
-
-Isso reforça a regra de que a camada visual não deve substituir a estrutura real usada pelo Ren'Py.
-
-## Seleção
-
-A ação de `URMChoice` faz:
-
-```python
-renpy.game.log.rollback_is_fixed = False
-return renpy.ui.ChoiceReturn(choice_text, index)()
-```
-
-O URM não executa manualmente o código da alternativa. A decisão é devolvida ao mecanismo de interação do Ren'Py, que continua a execução real dos nós associados à escolha.
-
-## Estado dinâmico
-
-`StoreMonitor` é um componente separado do sistema de Choices. Ele observa/intercepta determinadas alterações do store e usa `get_changes()` no callback Python para obter deltas de estado.
-
-Quando uma variável está sendo monitorada, `handleVarChange()` pode criar a notificação `Variable changed`, com valor anterior e valor novo.
-
-Isso não deve ser confundido com a notificação dedicada `Choices detected`.
-
-## Notificação de Choice
-
-A tela `URM_notifications` possui uma seção específica para Choices baseada em `Choices.isDisplayingChoice` e nas configurações correspondentes.
-
-A mensagem observada nos screenshots `0018`/`0019` é:
-
-```text
-Choices detected
-```
-
-Ela indica presença de Choice/Menu no fluxo atual; não é uma notificação de mudança de variável.
-
-## Path Detection
-
-`PathDetection` é separado de `Choices`.
-
-```text
-Choice:
-renpy.ast.Menu
-    ↓
-Choices.currentChoices
-
-Path Detection:
-nó atual
-    ↓
-look-ahead
-    ↓
-If futuro
-    ↓
-Paths
-```
-
-Não devemos fundir os dois sistemas na futura implementação do Wells.
-
-## Rollback
-
-A investigação atual sustenta o seguinte modelo:
-
-```text
-Choice
-  ↓
+ ↓
+display_menu()
+ ↓
+ui.interact()
+ ↓
 ChoiceReturn
-  ↓
-Ren'Py executa a alternativa
-  ↓
-Store pode mudar
-  ↓
-StoreMonitor observa
-  ↓
-Ren'Py mantém seu estado de rollback
-  ↓
-usuário faz rollback
-  ↓
-Ren'Py restaura estado/contexto
-  ↓
-Choice pode reaparecer
-  ↓
-URM observa novamente
+ ↓
+checkpoint(rv)
+ ↓
+bloco escolhido
+ ↓
+execução AST
 ```
 
-O URM não deve ser modelado como dono de um segundo estado ou de um segundo mecanismo de rollback.
+Se ocorrer rollback posteriormente, o Ren'Py restaura estado/contexto e reinicia a execução. O URM observa esse processo; ele não precisa manter um segundo mecanismo de rollback.
 
-## Fixed rollback e Skip
+## Replay
 
-O changelog do URM registra:
+`renpy.call_replay()` cria uma execução separada com novo `Context`, novo `RollbackLog` e stores preparados para replay. Ao terminar, o contexto de replay é removido e o log/store do jogo principal é restaurado.
 
-- 2.1: Choices dialog capaz de bypass de fixed choices / fixed rollback;
-- 2.2.1: Skip capaz de avançar rapidamente até a próxima Choice;
-- 2.3: CodeView inteligente para Choices e paths;
-- 2.6.1: prevenção de dados estáticos do URM no save.
+Portanto:
 
-A presença de:
+```text
+Jump
+  → continua no contexto atual
 
-```python
-renpy.game.log.rollback_is_fixed = False
+Replay
+  → cria uma bolha de execução separada
 ```
 
-antes de `ChoiceReturn` reforça que o bypass de fixed rollback faz parte do mecanismo de seleção do URM.
+## Invariante arquitetural vs. detalhe de versão
 
-A semântica exata desse campo e o circuito completo de checkpoint/rollback continuam sendo investigados diretamente no SDK 7.4.11.
+Os mecanismos acima são **confirmados para Ren'Py 7.4.11**.
 
-## Perguntas abertas atualizadas
+Não devemos assumir que nomes, campos, classes ou sequência interna sejam idênticos em SDKs posteriores. A futura comparação entre SDKs deverá separar:
 
-1. Semântica exata de `rollback_is_fixed` e sua relação com `ChoiceReturn`.
-2. Sequência precisa de `force_checkpoint` → `RollbackLog.complete()`.
-3. Ordem exata entre interação, checkpoint, execução da Choice e registro no rollback.
-4. Sequência interna de restauração de contexto/store durante rollback.
-5. Como o Skip do URM encontra/interrompe a próxima Choice.
-6. Comportamento de Choices com estruturas AST muito complexas.
-7. Compatibilidade exata entre versões Ren'Py suportadas pelo URM.
-8. Limites entre fonte Python associada à AST e fonte textual original do script.
-9. Segurança/consistência ao permitir Choices ocultas/fixed rollback.
+```text
+princípio arquitetural
+        ×
+implementação específica da versão
+```
 
-**Regra de preservação:** ainda não implementar nem simplificar o sistema. Primeiro completar a árvore inteira; somente depois decidir o que será transplantado para o Wells Framework.
+Essa separação será especialmente útil para investigar a fronteira de compatibilidade observada entre Ren'Py 8.5.2 e 8.5.3.
+
+## Regra de preservação
+
+Primeiro entender → depois inspecionar → depois planejar → só então modificar.
+
+O objetivo continua sendo completar a árvore do URM antes de decidir o que será transplantado para o Wells Framework.
