@@ -48,6 +48,26 @@ URMChoice.Action
 
 `CodeView` transforma nós AST em uma representação legível para a interface do URM. Ele não deve ser confundido com o `.rpy` original.
 
+Além da representação, o CodeView possui uma **camada de interação**: determinadas variáveis e labels presentes na representação podem ser transformados em hyperlinks e encaminhados para outras ferramentas do URM. Portanto, o CodeView não é somente um visor; ele também funciona como ponte entre informação reconstruída e ferramentas interativas.
+
+### Interação e intervenção
+
+A arquitetura deve distinguir:
+
+```text
+representar informação
+        ↓
+permitir interação
+        ↓
+encaminhar para ferramenta
+        ↓
+possível intervenção
+```
+
+Uma interação pode apenas abrir uma ferramenta, mas algumas ferramentas permitem modificar estado, fazer replay ou atuar sobre dados/configurações operacionais do próprio URM.
+
+A documentação consolidada desse princípio está em `runtime/interaction_and_intervention.md`.
+
 ### StoreMonitor
 
 `StoreMonitor` observa alterações do store e integra callbacks/checkpoints e determinados mecanismos de interceptação. Ele não é o interpretador Python do Ren'Py.
@@ -66,7 +86,7 @@ URMChoice.Action
 
 ### Loader
 
-O loader/bootstrap cria a infraestrutura modular do URM e carrega módulos externos sem fazer parte da lógica específica de Choices.
+O loader/bootstrap cria a infraestrutura modular do URM e carrega módulos externos sem fazer parte da lógica específica de Choices. Ele também localiza o archive do módulo e registra `archivePath` no módulo carregado; esse dado possui consumidores posteriores no caminho de atualização da API.
 
 ## Princípio de preservação
 
