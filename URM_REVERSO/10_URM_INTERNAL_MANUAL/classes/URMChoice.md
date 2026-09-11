@@ -56,6 +56,8 @@ Pede a `CodeView.nodesToCode(...)` uma representação textual dos nós da alter
 
 Isso é **reconstrução de apresentação**, não uma garantia de reprodução literal do `.rpy` original.
 
+A representação também pode participar da camada de interação do CodeView: variáveis e labels reconhecidos pelo `colorize()` podem tornar-se elementos clicáveis e encaminhar o usuário para outras ferramentas do URM.
+
 ### `jumpTo`
 
 Percorre diretamente `choice[2]` e retorna o `target` do primeiro `renpy.ast.Jump` encontrado. Se não houver Jump direto, retorna string vazia.
@@ -84,11 +86,11 @@ O URM, portanto, **não executa manualmente o bloco AST da Choice**. Ele devolve
 
 - 🟢 URM: limpa `rollback_is_fixed` imediatamente antes da chamada de `ChoiceReturn`.
 - 🔵 Ren'Py 7.4.11: `ChoiceReturn` possui comportamento sensível ao estado de fixed rollback/roll-forward.
-- 🟠 A razão mecânica exata dessa intervenção continua sendo fechada pela investigação do circuito de rollback do SDK.
+- 🟠 A função mecânica dessa intervenção foi parcialmente fechada: o SDK mostra que `rollback_is_fixed` é um estado efetivo consultado durante fixed rollback e que o URM o limpa antes da seleção programática. A intenção original do autor ainda não deve ser afirmada como fato.
 
 ## `OpenCodeView` / `OpenConditionView`
 
-Essas ações abrem a apresentação do `URM_CodeView` para inspeção do código ou da condição. São ferramentas de observação do URM, não mecanismos de execução da Choice.
+Essas ações abrem a apresentação do `URM_CodeView` para inspeção do código ou da condição. São ferramentas de observação do URM, mas a representação aberta pode conter elementos interativos que levam a ferramentas de modificação ou replay.
 
 ## Relações
 
@@ -101,6 +103,9 @@ ChoicesClass
                +--> isVisible
                +--> condition
                +--> code --> CodeView
+               |               |
+               |               +--> variable -> Modify Value
+               |               `--> label    -> Replay
                +--> jumpTo --> URM replay
                `--> Action --> Ren'Py ChoiceReturn
 ```
@@ -112,7 +117,8 @@ A implementação futura deve preservar a separação entre:
 1. representação da Choice;
 2. apresentação do texto;
 3. reconstrução do código;
-4. detecção de Jump para replay;
-5. seleção real através do mecanismo nativo do Ren'Py.
+4. camada de interação da representação;
+5. detecção de Jump para replay;
+6. seleção real através do mecanismo nativo do Ren'Py.
 
-Misturar essas camadas criaria um sistema diferente do URM.
+A interação deve ser tratada como parte da arquitetura, não como simples detalhe cosmético da interface. Misturar representação, interação e execução, porém, criaria um sistema diferente do URM.
