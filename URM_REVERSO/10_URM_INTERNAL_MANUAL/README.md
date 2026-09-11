@@ -66,7 +66,19 @@ possível intervenção
 
 Uma interação pode apenas abrir uma ferramenta, mas algumas ferramentas permitem modificar estado, fazer replay ou atuar sobre dados/configurações operacionais do próprio URM.
 
-A documentação consolidada desse princípio está em `runtime/interaction_and_intervention.md`.
+Documentação principal:
+
+- `runtime/interaction_and_intervention.md`
+- `classes/Var.md`
+- `runtime/replay_interaction.md`
+
+### Var / sistema de variáveis
+
+`Var` é a abstração usada pelo URM para resolver e manipular variáveis e caminhos de subobjetos/listas/dicionários.
+
+Isso é mais amplo que uma simples lista de variáveis de gameplay: com `searchObjects` habilitado, o sistema pode atravessar objetos públicos do `renpy.store` e seus atributos.
+
+Essa infraestrutura explica por que valores do próprio URM, como `x52URM.archivePath`, podem aparecer como dados operacionais acessíveis pela ferramenta genérica de variáveis.
 
 ### StoreMonitor
 
@@ -79,6 +91,18 @@ A documentação consolidada desse princípio está em `runtime/interaction_and_
 ### PathDetection
 
 `PathDetection` constrói caminhos a partir de análise de nós e condições futuras. É relacionado ao fluxo de execução, mas é separado do sistema de `Choices`.
+
+### Replay
+
+`URMReplay` é uma ferramenta de exploração separada da seleção normal de Choices. Ele usa um replay controlado e recebe um escopo derivado das variáveis públicas do store.
+
+O URM também possui uma ferramenta de `Jump` real. Portanto:
+
+```text
+Jump atual ≠ Replay isolado
+```
+
+Essa distinção deve ser preservada na reconstrução.
 
 ### Notifications
 
