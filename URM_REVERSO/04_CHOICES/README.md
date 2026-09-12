@@ -12,6 +12,7 @@ Documentos detalhados desta etapa:
 - `06_CONTEXT_ROLLBACK_EXECUTION_7_4_11.md` — relação entre `Context`, `RollbackLog`, restauração do contexto, `current`, `Context.run()`, `RestartContext`, fixed rollback e retomada da execução do AST no Ren'Py 7.4.11.
 - `07_URM_CHOICE_INFORMATION_PROJECTION.md` — `Menu.items` como fonte estrutural, `URMChoice` como camada de interpretação/projeção e distinção entre estrutura, estado, execução e apresentação.
 - `08_FLUXO_EXECUCAO_BLOCO_CHOICE_IF_CALL_JUMP.md` — distinção entre próximo nó, destino direto, caminhos possíveis, caminho atualmente executável e consequências ao analisar `If`, `Call` e `Jump` dentro de uma Choice.
+- `09_MENU_ROLLBACK_FORCE_E_CONTINUIDADE_BLOCO.md` — descoberta de que `Menu` possui `rollback = "force"` por padrão e análise da relação entre política de rollback, `Menu.execute()`, `Menu.next` e a continuidade dos blocos de Choice.
 
 ## Núcleo
 
@@ -152,6 +153,40 @@ execução AST
 ```
 
 Se ocorrer rollback posteriormente, o Ren'Py restaura estado/contexto e reinicia a execução. O URM observa esse processo; ele não precisa manter um segundo mecanismo de rollback.
+
+O próprio `Menu` possui `rollback = "force"` no AST 7.4.11. Essa propriedade participa da política de rollback consumida pelo executor e não deve ser confundida com a chamada posterior de `checkpoint(rv)` feita pelo circuito de interação.
+
+## Execução do bloco de uma Choice
+
+Uma alternativa de Menu possui um bloco AST próprio. Esse bloco pode conter Python, diálogo, `If`, `Call`, `Jump` e outras statements.
+
+Portanto:
+
+```text
+Choice
+ ↓
+block AST
+ ↓
+execução dos nós
+```
+
+não equivale necessariamente a:
+
+```text
+Choice → Jump
+```
+
+Para análise completa, distinguimos:
+
+```text
+destino direto
+próximo nó
+caminhos possíveis
+caminho atualmente executável
+consequências efetivamente produzidas
+```
+
+`URMChoice.jumpTo` cobre somente uma pequena projeção dessa estrutura.
 
 ## Replay
 
