@@ -10,6 +10,8 @@ Documentos detalhados desta etapa:
 - `02_LIMITES_E_CASOS_ESPECIAIS.md` — limites, Choices ocultas, texto substituído versus valor real, `jumpTo`, CodeView, fixed rollback, Skip e regras de preservação para o Wells.
 - `03_AST_MENU_BLOCOS_CALL_IF_JUMP.md` — estrutura real de `Menu.items`, blocos de Choice, `If.entries`, diferença entre `Call` e `Jump`, operações visuais separadas e limite estrutural de `URMChoice.jumpTo`.
 - `06_CONTEXT_ROLLBACK_EXECUTION_7_4_11.md` — relação entre `Context`, `RollbackLog`, restauração do contexto, `current`, `Context.run()`, `RestartContext`, fixed rollback e retomada da execução do AST no Ren'Py 7.4.11.
+- `07_URM_CHOICE_INFORMATION_PROJECTION.md` — `Menu.items` como fonte estrutural, `URMChoice` como camada de interpretação/projeção e distinção entre estrutura, estado, execução e apresentação.
+- `08_FLUXO_EXECUCAO_BLOCO_CHOICE_IF_CALL_JUMP.md` — distinção entre próximo nó, destino direto, caminhos possíveis, caminho atualmente executável e consequências ao analisar `If`, `Call` e `Jump` dentro de uma Choice.
 
 ## Núcleo
 
