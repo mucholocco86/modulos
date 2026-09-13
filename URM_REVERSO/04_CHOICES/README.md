@@ -13,6 +13,7 @@ Documentos detalhados desta etapa:
 - `07_URM_CHOICE_INFORMATION_PROJECTION.md` — `Menu.items` como fonte estrutural, `URMChoice` como camada de interpretação/projeção e distinção entre estrutura, estado, execução e apresentação.
 - `08_FLUXO_EXECUCAO_BLOCO_CHOICE_IF_CALL_JUMP.md` — distinção entre próximo nó, destino direto, caminhos possíveis, caminho atualmente executável e consequências ao analisar `If`, `Call` e `Jump` dentro de uma Choice.
 - `09_MENU_ROLLBACK_FORCE_E_CONTINUIDADE_BLOCO.md` — descoberta de que `Menu` possui `rollback = "force"` por padrão e análise da relação entre política de rollback, `Menu.execute()`, `Menu.next` e a continuidade dos blocos de Choice.
+- `10_URM_CHOICES_COMO_PROJECAO_DA_INTERACAO_NATIVA.md` — fecha a ponte entre `Menu.items`, `URMChoice`, `MenuEntry`, `ChoiceReturn`, a Choice Screen e a interação nativa; incorpora o aprendizado do protótipo experimental e define a base mínima segura para um primeiro Walkthrough somente-leitura.
 
 ## Núcleo
 
