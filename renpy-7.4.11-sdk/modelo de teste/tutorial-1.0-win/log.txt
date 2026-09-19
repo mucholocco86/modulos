@@ -1,0 +1,56 @@
+2026-09-03 12:22:10 UTC
+Windows-11-10.0.26100-SP0
+Ren'Py 8.5.2.26010301
+
+tutorial
+1.0
+Built at 2026-04-22 13:03:06 UTC
+
+Early init took 197 ms
+Loading error handling took 125 ms
+Loading script took 2965 ms
+Loading save slot metadata took 82 ms
+Loading persistent took 0 ms
+Set script version to: (8, 5, 2)
+ - Init at game/01example.rpy:571 took 538 ms.
+ - Init at game/tl/brazil/replaceText.rpy:1 took 797 ms.
+Running init code took 2435 ms
+Loading analysis data took 63 ms
+Analyze and compile ATL took 41 ms
+Reloading save slot metadata took 780 ms
+Dump and make backups took 1 ms
+Cleaning cache took 0 ms
+Making clean stores took 1 ms
+Initial gc took 116 ms
+DPI scale factor: 1.000000
+nvdrs: Loaded, about to disable thread optimizations.
+nvdrs: b"Couldn't load nvlib." (can be ignored)
+Creating interface object took 74 ms
+Init translation took 1 ms
+Cleaning stores took 1 ms
+Load screen analysis took 17 ms
+Analyze screens took 29 ms
+Save screen analysis took 52 ms
+Save pyanalysis took 0 ms
+Save bytecode took 111 ms
+Running _start took 6 ms
+Interface start took 1161 ms
+
+Initializing gl2 renderer:
+primary display bounds: (0, 0, 1366, 768)
+swap interval: 1 frames
+Windowed mode.
+Vendor: 'Intel'
+Renderer: 'Intel(R) HD Graphics'
+Version: '4.0.0 - Build 10.18.10.5161'
+Display Info: <Info({'bitsize': 32, 'bytesize': 4, 'masks': (16711680, 65280, 255, 0), 'shifts': (16, 8, 0, 0), 'losses': (0, 0, 0, 8), 'current_w': 1366, 'current_h': 768, 'refresh_rate': 60, 'hw': False, 'wm': True, 'video_mem': 268435456, 'blit_hw': False, 'blit_hw_CC': False, 'blit_hw_A': False, 'blit_sw': False, 'blit_sw_CC': False, 'blit_sw_A': False})>
+Screen sizes: virtual=(1280, 720) physical=(1366, 697) drawable=(1366, 697)
+Maximum texture size: 4096x4096
+controller: '030000004c050000c405000021026800' 'PS4 Controller' 1
+Screen sizes: virtual=(1280, 720) physical=(1366, 697) drawable=(1366, 697)
+Maximum texture size: 4096x4096
+controller: '030000004c050000c405000021026800' 'PS4 Controller' 1
+Cleaning stores took 1 ms
+Load screen analysis took 87 ms
+Analyze screens took 0 ms
+Running _start took 8 ms
